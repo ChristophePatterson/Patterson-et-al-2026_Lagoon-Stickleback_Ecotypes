@@ -60,11 +60,11 @@ bcftools view -V indels -r CM102076.1:26500000-27130000 \
 tabix ${output_dir}/stickleback_SNPs.NOGTDP5.MEANGTDP5_200.Q60.SAMP0.8.MAF2_chrI_inv.vcf.gz
 
 # All genes within the region
-# extract regions contained with atp1a1a (g1117 in DUKE genome and LOC120823921 in Darwin)
+# extract regions contained with atp1a1a (g1118 in DUKE genome and LOC120823921 in Darwin)
 awk -v OFS='\t'  '$1 == "CM102076.1" && $2>=26500000 && $3<=27130000{print $1, $2, $3, $5, $6, $7, $9}' /gpfs01/home/mbzcp2/data/sticklebacks/genomes/GCA_046562415.1_Duke_GAcu_1.0_genomic_functional_annotation/GCA_046562415.1_Duke_GAcu_1.0_genomic_blast_matches.gtf > ${output_dir}/ChrI_inv_CDS.bed
 
 # Extract atp1a1a coding region
-# extract regions contained with atp1a1a (g1117 in DUKE genome and LOC120823921 in Darwin)
+# extract regions contained with atp1a1a (g1118 in DUKE genome and LOC120823921 in Darwin)
 grep -w "g1118" /gpfs01/home/mbzcp2/data/sticklebacks/genomes/GCA_046562415.1_Duke_GAcu_1.0_genomic_functional_annotation/GCA_046562415.1_Duke_GAcu_1.0_genomic_blast_matches.gtf | \
     awk -v OFS='\t' '$5=="CDS" {print $1, $2, $3}' > ${output_dir}/atp1a1a_CDS.bed
 
