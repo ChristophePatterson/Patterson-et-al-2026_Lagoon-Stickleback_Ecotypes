@@ -3,6 +3,12 @@ library(LEA)
 library(data.table)
 library(tidyverse)
 library(ggnewscale)
+library(ggh4x)
+library(ape)
+library(ggtree)
+library(patchwork)
+
+cbPalette <- c("#E69F00", "#009E73","#D55E00","#0072B2","#999999", "#F0E442", "#56B4E9", "#CC79A7", "black")
 
 # Read in vcf
 args <- commandArgs(trailingOnly=T)
@@ -58,8 +64,8 @@ gene.bed <- read.table(paste0(outdir, "/ChrI_inv_CDS.bed")) %>%
          mid = end-((end-start)/2))
 
 # Set window size
-wndsize <- 25000
-wndslid <- 5000
+wndsize <- 10000
+wndslid <- 2500
 
 # Create windows for each chromosome
 ## Blank list
@@ -137,10 +143,14 @@ mds.comp <- map2_dfr(
       # Check is dist matrix contains any NA
       if(any(is.na(dc))) {return(NULL) ; print("mds-failed")}
       mds <- cmdscale(dc, k = 2)
+      # Assign clusters
+      mds.cluster <- as.factor(kmeans(mds, 3)$cluster[colnames(geno.mat)])
+
+
 
       # Return data.frame with PCA1, PCA2, MDS1, MDS2, sample names, window name
       return(data.frame(sample = colnames(geno.mat), chr = chr, start = wnd$start, end = wnd$end, base.calls = base.calls, nsamps = ncol(geno.mat),
-                        MDS1 = mds[,1], MDS2 = mds[,2], dist.marine = dc.marine.samp, het.prop = het.count/base.calls))
+                        MDS1 = mds[,1], MDS2 = mds[,2], mds.cluster = mds.cluster, dist.marine = dc.marine.samp, het.prop = het.count/base.calls))
 
     }
   )
@@ -168,7 +178,7 @@ signs <- samples_data %>%
 samples_data <- samples_data %>%
   left_join(signs, by = "windowname") %>%
   mutate(across(all_of(scale_cols),
-                ~ ifelse(get(paste0("sign_", cur_column())) == -1, -.x, .x))) %>%
+                ~ ifelse(get(paste0("sign_", cur_column())) == 1, -.x, .x))) %>%
   select(-starts_with("sign_"))  # remove helper columns
 
 # Calculate max and min MDS
@@ -186,7 +196,11 @@ samples_data <- samples_data %>%
   mutate(
     MDS1_ratio = (MDS1_scaled + min.mds) / (max.mds + min.mds),
     Ecotype = factor(Ecotype, levels = c("fw", "mig", "resi", "gene")) 
-  )
+  ) %>%
+  mutate(haplotype = case_when(MDS1_ratio < 0.25 ~ "Anc",
+                               MDS1_ratio > 0.75 ~ "Alt",
+                               between(MDS1_ratio, 0.25, 0.75) ~ "Het"),
+        haplotype = factor(haplotype, levels = c("Anc", "Het", "Alt")))
 
 min(c(atp1a1a.bed$start,atp1a1a.bed$end))
 max(c(atp1a1a.bed$start,atp1a1a.bed$end))
@@ -252,13 +266,13 @@ mds_chrI_inv_genes <- ggplot(samples_data) +
   geom_text(data = gene.bed.track,aes(x = as.numeric(mid), y = -track*1.5, label = gene), size = 4, show.legend = F) +
   # geom_point(data = gene.bed.track, aes(x = start, y = 0, col = gene.col), show.legend = F) +
   scale_color_manual(values = c("black", "grey50")) +
-  scale_fill_gradient2(low = "#FFC107", mid = "#D81B60", high = "#1E88E5", midpoint=0.5, name =  "MDS Scaled", 
+  scale_fill_gradient2(high = "#FFC107", mid = "#D81B60", low = "#1E88E5", midpoint=0.5, name =  "MDS Scaled", 
       guide = guide_colorbar(title.vjust = 0.6, title.hjust = 100,
         barwidth = unit(8, "cm"),  # Adjust the width of the bar
         barheight = unit(1, "cm")   # Adjust the height of the bar
     )) +
   scale_x_continuous(labels = function(x) paste0(x / 1e6),name = "Mbps", expand = c(0.01,0)) +
-  facet_grid(Ecotype+Population~.,scale = "free", space = "free", switch = "y") +
+  facet_nested(Ecotype+Population~.,scale = "free", space = "free", switch = "y") +
   new_scale_fill() +
   geom_tile(aes(x = max(as.numeric(mid))+wndsize, y = sample, fill = Ecotype), width = wndsize, inherit.aes = FALSE, show.legend = F) +
   scale_fill_manual(values = ecotype_cols, name = "Ecotype Group") +
@@ -296,13 +310,221 @@ p <- ggplot(samples_data) +
     geom_line(aes(mid, MDS1_ratio, col = het.prop, group = sample)) +
     geom_vline(xintercept = c(26836909, 26867066)) +
     annotate("text", x = (26836909+((26867066-26836909)/2)), y = 0.0, label = "atp1a1a", color = "black", size = 4, vjust = 1) +
-    scale_color_gradient2(low = "#FFC107", mid = "#D81B60", high = "#1E88E5", name =  "Heterozygousity") +
+    scale_color_gradient2(high = "#FFC107", mid = "#D81B60", low = "#1E88E5", name =  "Heterozygousity") +
     geom_segment(data = atp1a1a.bed, aes(x = start, xend = end, y = -0.0001), linewidth = 10) +
     theme_bw() +
     coord_cartesian(clip = "off") 
 
+
+p <- ggplot(samples_data) +
+    geom_line(aes(mid, MDS1_ratio, col = haplotype, group = sample)) +
+    geom_point(aes(mid, MDS1_ratio, col = haplotype, group = sample)) +
+    geom_vline(xintercept = c(26836909, 26867066)) +
+    annotate("text", x = (26836909+((26867066-26836909)/2)), y = 0.0, label = "atp1a1a", color = "black", size = 4, vjust = 1) +
+    scale_color_manual(values = c("#FFC107","#D81B60","#1E88E5")) +
+    geom_segment(data = atp1a1a.bed, aes(x = start, xend = end, y = -0.0001), linewidth = 10) +
+    theme_bw() +
+    coord_cartesian(clip = "off") 
+
+
+p <- ggplot(samples_data) +
+    geom_tile(aes(mid, sample, fill = haplotype, group = sample)) +
+    scale_fill_manual(values = c("#1E88E5","#D81B60","#FFC107")) +
+    facet_nested(Ecotype+Population~.,scale = "free", space = "free", switch = "y") +
+    theme_bw() +
+    scale_x_continuous(labels = function(x) paste0(x / 1e6), n.breaks = 100,name = "Mbps", expand = c(0.01,0)) +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+          panel.ontop = TRUE, panel.background = element_rect(fill = NA))
+
 ## ggsave(paste0(outdir,"/sliding_window_mds_chrI_inv_wnd",wndsize ,"_sld",wndslid,".png"), p, width = 20)
-# ggsave(paste0("test.png"), p, width = 20)
+ggsave(paste0("test.png"), p, width = 20)
+
+# Function that rotates trees so they are polarised
+rotate_points <- function(x, y, angle_deg, center = c(0, 0)) {
+  # Convert degrees to radians
+  angle_rad <- pi * (angle_deg / 180)
+  
+  # Shift to center
+  x_shift <- x - center[1]
+  y_shift <- y - center[2]
+  
+  # Rotation matrix
+  cos_a <- cos(angle_rad)
+  sin_a <- sin(angle_rad)
+  
+  x_rot <- x_shift * cos_a - y_shift * sin_a + center[1]
+  y_rot <- x_shift * sin_a + y_shift * cos_a + center[2]
+  
+  data.frame(x_rot = x_rot, y_rot = y_rot)
+}
+
+# range of angle to test rot 
+angles_range <-seq(-180, 180, 5)
+
+### Different in sections that appear to be in strong linkage
+high.linkage.regions <- rbind(c("I1",26.7, 26.76), c("DC1", 26.795, 26.82), c("DC2", 26.835, 26.85), 
+                              c("DC3", 26.865, 26.895), c("I2", 26.93, 26.955)) %>%
+  data.frame() %>%
+  rename(region = X1, start = X2, end = X3) %>%
+  mutate(across(c("start", "end"), ~ as.numeric(.x) * 1e6))
+
+nj.plots.regions <- list()
+pca.RoI <- list()
+pca.RoI.plots <- list()
+pca.RoI.data <- list()
+
+for(i in 1:nrow(high.linkage.regions)){
+  # Name of window high.linkage.regions
+  wnd <- high.linkage.regions[i,]
+  wndname <- paste(wnd$region, wnd$start, wnd$end)
+  # Extract geno 
+  snp.idx <- which(vcf.SNPs@fix[, "CHROM"] == chr &
+                       between(as.numeric(vcf.SNPs@fix[, "POS"]), wnd$start, wnd$end))
+
+  print(paste(wndname, "nsnps",length(snp.idx)))
+  if(length(snp.idx) < 2) { return(NULL) ; print("Not enough SNPs or samples")}
+  ## Set geno to be 0,1, or 9
+  geno.mat <- geno.mat.full[snp.idx, , drop = FALSE]
+  geno.mat <- matrix(as.integer(factor(geno.mat, levels = c("0/0", "0/1", "1/1")))-1, 
+                 nrow = nrow(geno.mat), dimnames = dimnames(geno.mat))
+  geno.mat <- apply(geno.mat, 2, as.integer)
+  
+  # Filter rows/cols with excessive NA, constant values, etc.
+  is.samp.all.missing <- apply(geno.mat, MARGIN = 2, function(x) sum(is.na(x))>nrow(geno.mat)*0.5)
+  if(any(is.samp.all.missing)){geno.mat <- geno.mat[,-is.samp.all.missing]}
+  ##is.bad.snp <- apply(geno.mat, 1, function(x) {
+  ##      vals <- unique(na.omit(x))
+  ##      length(vals) <= 1 || all(vals == 1)  # All het or constant
+  ##})
+  ## if(any(is.bad.snp)){geno.mat <- geno.mat[-which(is.bad.snp), ]}
+  print(paste("Stage 1", nrow(geno.mat), ncol(geno.mat)))
+  #Check is matrix still contains data
+  if(ncol(geno.mat)<=10|nrow(geno.mat)<=10){ return(NULL) ; print("Not enough SNPs or samples")}
+  # Run MDS / PCA on cleaned geno.sub
+  # print("Stage 2")
+  ## Calculate distance matrix
+  dc <- dist(t(geno.mat))
+
+  # Calculate heterozygousity
+  het.df <- data.frame(sample = colnames(geno.mat), het =  apply(geno.mat, MARGIN = 2, FUN = function(x) sum(x == 1&(!is.na(x)))/sum(!is.na(x))))
+
+  # Window infor
+  # plot
+  plot.tmp <- ggtree(nj(dc), layout = "ape") 
+  # Combine with sample info
+  plot.tmp <- plot.tmp %<+% seq_data 
+  plot.tmp@data <- merge(plot.tmp@data, het.df, by.x = "label", by.y = "sample", all.x = T)
+  
+
+  # What is the middle coordinates of tree
+  mid.point <- c((max(plot.tmp$data$x)+min(plot.tmp$data$x))/2, (max(plot.tmp$data$y)-min(plot.tmp$data$y))/2)
+  
+  # If you rotate the mig samples at what point is their x height min. (How do you rotate the tree to get the mig samples at the bottom)
+  best_rot <- angles_range[which.min(sapply(angles_range, FUN = function(x){
+  mean(rotate_points(plot.tmp$data$x[plot.tmp$data$Ecotype=="mig"], plot.tmp$data$y[plot.tmp$data$Ecotype=="mig"], x, center = mid.point)[,"y_rot"], na.rm = T)
+  }))]
+    
+  plot.tmp$data[,c("x", "y")] <- rotate_points(plot.tmp$data$x+min(plot.tmp$data$x), plot.tmp$data$y, best_rot, center = mid.point)
+  plot.tmp$data[,c("branch.x", "branch.y")] <- rotate_points(plot.tmp$data$branch.x, plot.tmp$data$branch.y, best_rot, center = mid.point)
+          
+  plot.tmp.rot <- ggplot(plot.tmp$data) +
+    # geom_point(aes(x_new, y_new)) +
+    # geom_point(aes(mid.point[1], mid.point[2]), col = "red") +
+    geom_segment(aes(x = x, y=y, xend = branch.x+(branch.x-x), yend = branch.y+(branch.y-y))) +
+    geom_point(aes(x, y, shape = Ecotype, col = Waterbody, alpha = 1-het), size = 2) +
+    # scale_color_manual(values = c("#FFC107", "#1E88E5", "#009E73"), na.translate = F) +
+    scale_color_manual(values = cbPalette) +
+    scale_shape_manual(values = c(15,19,17), na.translate = F) +
+    # scale_color_manual(values = c("#E69F00", "#009E73","#D55E00","#0072B2")) +
+    coord_fixed() +
+    theme_void() +
+    theme(text = element_text(size = 20))
+
+  if((i %% 2) == 1){plot.tmp.rot <- plot.tmp.rot + ggtitle(wndname) + theme(plot.title = element_text(hjust = 0.5, size = 10))}
+  if((i %% 2) == 0){plot.tmp.rot <- plot.tmp.rot + labs(caption = wndname) + theme(plot.caption = element_text(hjust=0.5, size = 10))}
+
+
+  # Add tree tips
+  nj.plots.regions[[i]] <- plot.tmp.rot
+
+  # Remove highly missing SNPs
+  geno.imputed <- geno.mat[rowSums(is.na(geno.mat)) < ncol(geno.mat)*0.3,]
+  # Remove highly missing samples
+  geno.imputed <- geno.mat[colSums(is.na(geno.mat)) < nrow(geno.mat)*0.3,]
+  print(dim(geno.imputed))
+
+  # Calculate average SNP value
+  SNPmeans <- colMeans(geno.imputed, na.rm = T)
+  
+  # Loop through and overwrite missing data
+  for(j in 1:ncol(geno.imputed)){
+    geno.imputed[is.na(geno.imputed[,j]),j] <- SNPmeans[j]
+  }
+
+  # Run PCA
+  pca.RoI[[i]] <- prcomp(
+      t(geno.imputed),
+      center = TRUE,
+      scale. = FALSE)
+  
+  # Extract PCA percentage labels
+  pca.percentage <- paste0("PC ", 1:(length(pca.RoI[[i]]$sdev)), 
+                            " (", round((pca.RoI[[i]]$sdev)^2 / sum((pca.RoI[[i]]$sdev)^2) * 100,2),"%)")
+
+  # Create into data frame with sample information
+  pca.RoI.data[[i]] <- data.frame(pca.RoI[[i]]$x)
+  pca.RoI.data[[i]]$sample <- rownames(pca.RoI.data[[i]])
+  pca.RoI.data[[i]] <- merge(pca.RoI.data[[i]], seq_data, by.x = "sample", by.y = "individual") %>%
+    mutate(region = wndname)
+  pca.RoI.data[[i]]$het <- het.df$het[match(het.df$sample, pca.RoI.data[[i]]$sample)]
+  
+  # Create plot  
+  pca.RoI.plots[[i]] <- ggplot(pca.RoI.data[[i]]) +
+      geom_point(aes(PC1, PC2, col = Waterbody, shape = Ecotype)) +
+      geom_text(aes(PC1, PC2, col = Waterbody, label = paste(sample, Population)), size = 0.8) +
+      ggtitle(wndname) +
+      labs(x = pca.percentage[1], y = pca.percentage[2]) +
+      # scale_color_viridis_d(option = "turbo", na.value="grey", drop = F) 
+      scale_color_manual(values = cbPalette) +
+      theme_bw()
+
+  print(paste("Done:", wndname, i))
+}
+
+nj.region.plots <- wrap_plots(nj.plots.regions, guides = "collect", widths = 1, heights = 1, nrow = 1) & 
+                      theme(legend.position = "right")
+
+pca.regions.plots <- wrap_plots(pca.RoI.plots, guides = "collect", widths = 1, heights = 1, nrow = 1) & 
+                      theme(legend.position = "right")
+
+ggsave("test.png", pca.regions.plots, width = 15, height = 15)
+
+p <- ggplot(samples_data) +
+    geom_tile(aes(mid, sample, fill = MDS1_ratio, group = sample)) +
+    geom_vline(data = high.linkage.regions, aes(xintercept = start+1000), col = "grey", linewidth = 1) + 
+    geom_vline(data = high.linkage.regions, aes(xintercept = start), linewidth = 1) + 
+    geom_vline(data = high.linkage.regions, aes(xintercept = end-1000), col = "grey", linewidth = 1) + 
+    geom_vline(data = high.linkage.regions, aes(xintercept = end), linewidth = 1) + 
+    #geom_segment(data = high.linkage.regions, aes(x = start, xend = end, y = ".Region"), linewidth = 40)
+    geom_text(data = high.linkage.regions %>% mutate(Ecotype = "", Population = ""),
+              aes(x = start + (end-start)/2, y =  ".Region", label = region)) + 
+    # scale_fill_manual(values = c("#1E88E5","#D81B60","#FFC107")) +
+    scale_fill_gradient2(high = "#FFC107", mid = "#D81B60", low = "#1E88E5", midpoint=0.5) +
+    facet_nested(Ecotype+Population~.,scale = "free", space = "free", switch = "y") +
+    theme_bw() +
+    scale_x_continuous(labels = function(x) paste0(x / 1e6),name = "Mbps", expand = c(0.01,0)) 
+
+ggsave("test.png", p/nj.region.plots/pca.regions.plots + plot_layout(heights = c(5,2,1)), width = 15, height = 20)
+
+p<- ggplot(pca.RoI.data[[i]]) +
+  geom_histogram(aes(het))
+ggsave("test.png", p + plot_layout(heights = c(5,2,1)), width = 15, height = 20)
+
+
+
+print("SLEEP")
+Sys.sleep(30)
+
 
 # Extract atp1a1a genotype
 geno.mat.atp1a1a <- extract.gt(vcf.atp1a1a,element = "GT")
@@ -379,9 +601,6 @@ atp1a1a.genotype <- ggplot(atp1a1a.df.geno) +
 
 
 #  Calc nj 
-library(ape)
-library(ggtree)
-library(patchwork)
 nj.data <- nj(dc.atp1a1a)
 
 # Create tree plot
@@ -488,29 +707,6 @@ gene.mds.plot <- ggplot(gene_data) +
   geom_text(aes(min(MDS1*1.1), start, label = gene))
 
 ggsave("test.png", gene.mds.plot)
-
-
-# Function that rotates trees so they are polarised
-rotate_points <- function(x, y, angle_deg, center = c(0, 0)) {
-  # Convert degrees to radians
-  angle_rad <- pi * (angle_deg / 180)
-  
-  # Shift to center
-  x_shift <- x - center[1]
-  y_shift <- y - center[2]
-  
-  # Rotation matrix
-  cos_a <- cos(angle_rad)
-  sin_a <- sin(angle_rad)
-  
-  x_rot <- x_shift * cos_a - y_shift * sin_a + center[1]
-  y_rot <- x_shift * sin_a + y_shift * cos_a + center[2]
-  
-  data.frame(x_rot = x_rot, y_rot = y_rot)
-}
-
-# range of angle to test rot 
-angles_range <-seq(-180, 180, 5)
 
 # Loop through and plot
 nj.plots <- list()
