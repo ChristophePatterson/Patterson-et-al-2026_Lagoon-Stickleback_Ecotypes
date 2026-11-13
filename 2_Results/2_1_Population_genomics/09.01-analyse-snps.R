@@ -132,7 +132,7 @@ geno2lfmm(paste0(plot.dir, "/LEA_PCA/", SNP.library.name, "/", SNP.library.name,
           paste0(plot.dir, "/LEA_PCA/", SNP.library.name, "/",SNP.library.name,".lfmm"), force = TRUE)
 #PCA
 print("Reading back in PCA")
-pc <- pca(paste0(plot.dir, "/LEA_PCA/", SNP.library.name, "/",SNP.library.name,".lfmm"), scale = TRUE)
+pc <- pca(paste0(plot.dir, "/LEA_PCA/", SNP.library.name, "/",SNP.library.name,".lfmm"), scale = FALSE)
 
 pc.sum <- summary(pc)
 # Links PCA data to 
@@ -216,7 +216,7 @@ mds <- cmdscale(dc, k = 6)
 geno2lfmm(paste0(plot.dir, "/LEA_PCA/", SNP.library.name, "/", SNP.library.name,"_paired.geno"), 
           paste0(plot.dir, "/LEA_PCA/", SNP.library.name, "/",SNP.library.name,"_paired.lfmm"), force = TRUE)
 #PCA
-pc <- pca(paste0(plot.dir, "/LEA_PCA/", SNP.library.name, "/",SNP.library.name,"_paired.lfmm"), scale = TRUE)
+pc <- pca(paste0(plot.dir, "/LEA_PCA/", SNP.library.name, "/",SNP.library.name,"_paired.lfmm"), scale = FALSE)
 pc.sum <- summary(pc)
 
 # Links PCA data to 
