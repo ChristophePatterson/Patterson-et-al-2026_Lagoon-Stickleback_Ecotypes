@@ -65,7 +65,7 @@ gene.bed <- read.table(paste0(outdir, "/ChrI_inv_CDS.bed")) %>%
 
 # Set window size
 wndsize <- 10000
-wndslid <- 2500
+wndslid <- 5000
 
 # Create windows for each chromosome
 ## Blank list
@@ -315,7 +315,6 @@ p <- ggplot(samples_data) +
     theme_bw() +
     coord_cartesian(clip = "off") 
 
-
 p <- ggplot(samples_data) +
     geom_line(aes(mid, MDS1_ratio, col = haplotype, group = sample)) +
     geom_point(aes(mid, MDS1_ratio, col = haplotype, group = sample)) +
@@ -325,7 +324,6 @@ p <- ggplot(samples_data) +
     geom_segment(data = atp1a1a.bed, aes(x = start, xend = end, y = -0.0001), linewidth = 10) +
     theme_bw() +
     coord_cartesian(clip = "off") 
-
 
 p <- ggplot(samples_data) +
     geom_tile(aes(mid, sample, fill = haplotype, group = sample)) +
@@ -363,7 +361,7 @@ angles_range <-seq(-180, 180, 5)
 
 ### Different in sections that appear to be in strong linkage
 high.linkage.regions <- rbind(c("I1",26.7, 26.76), c("DC1", 26.795, 26.82), c("DC2", 26.835, 26.85), 
-                              c("DC3", 26.865, 26.895), c("I2", 26.93, 26.955)) %>%
+                              c("DC3", 26.865, 26.895), c("I2", 26.93, 26.955), c("I3", 27.02, 27.045)) %>%
   data.frame() %>%
   rename(region = X1, start = X2, end = X3) %>%
   mutate(across(c("start", "end"), ~ as.numeric(.x) * 1e6))
@@ -392,6 +390,12 @@ for(i in 1:nrow(high.linkage.regions)){
   # Filter rows/cols with excessive NA, constant values, etc.
   is.samp.all.missing <- apply(geno.mat, MARGIN = 2, function(x) sum(is.na(x))>nrow(geno.mat)*0.5)
   if(any(is.samp.all.missing)){geno.mat <- geno.mat[,-is.samp.all.missing]}
+
+  # Remove highly missing SNPs
+  geno.mat <- geno.mat[rowSums(is.na(geno.mat)) < ncol(geno.mat)*0.3,]
+  # Remove highly missing samples
+  geno.mat <- geno.mat[,colSums(is.na(geno.mat)) < nrow(geno.mat)*0.3]
+
   ##is.bad.snp <- apply(geno.mat, 1, function(x) {
   ##      vals <- unique(na.omit(x))
   ##      length(vals) <= 1 || all(vals == 1)  # All het or constant
@@ -431,26 +435,26 @@ for(i in 1:nrow(high.linkage.regions)){
     # geom_point(aes(x_new, y_new)) +
     # geom_point(aes(mid.point[1], mid.point[2]), col = "red") +
     geom_segment(aes(x = x, y=y, xend = branch.x+(branch.x-x), yend = branch.y+(branch.y-y))) +
-    geom_point(aes(x, y, shape = Ecotype, col = Waterbody, alpha = 1-het), size = 2) +
-    # scale_color_manual(values = c("#FFC107", "#1E88E5", "#009E73"), na.translate = F) +
-    scale_color_manual(values = cbPalette) +
+    geom_point(data = plot.tmp$data[plot.tmp$data$het>0.3,], aes(x, y, alpha = 0.2), col = "grey", size = 3) +
+    geom_point(aes(x, y, shape = Ecotype, col = Ecotype), size = 2) +
+    scale_color_manual(values = c("#FFC107", "#1E88E5", "#009E73"), na.translate = F) +
+    # scale_color_manual(values = cbPalette) +
     scale_shape_manual(values = c(15,19,17), na.translate = F) +
     # scale_color_manual(values = c("#E69F00", "#009E73","#D55E00","#0072B2")) +
     coord_fixed() +
     theme_void() +
+    scale_alpha(guide = 'none') +
     theme(text = element_text(size = 20))
 
-  if((i %% 2) == 1){plot.tmp.rot <- plot.tmp.rot + ggtitle(wndname) + theme(plot.title = element_text(hjust = 0.5, size = 10))}
-  if((i %% 2) == 0){plot.tmp.rot <- plot.tmp.rot + labs(caption = wndname) + theme(plot.caption = element_text(hjust=0.5, size = 10))}
+  plot.tmp.rot <- plot.tmp.rot + ggtitle(wndname) + theme(plot.title = element_text(hjust = 0.5, size = 10))
+  ##if((i %% 2) == 1){}
+  ##if((i %% 2) == 0){plot.tmp.rot <- plot.tmp.rot + labs(caption = wndname) + theme(plot.caption = element_text(hjust=0.5, size = 10))}
 
 
   # Add tree tips
   nj.plots.regions[[i]] <- plot.tmp.rot
 
-  # Remove highly missing SNPs
-  geno.imputed <- geno.mat[rowSums(is.na(geno.mat)) < ncol(geno.mat)*0.3,]
-  # Remove highly missing samples
-  geno.imputed <- geno.mat[colSums(is.na(geno.mat)) < nrow(geno.mat)*0.3,]
+  geno.imputed <- geno.mat
   print(dim(geno.imputed))
 
   # Calculate average SNP value
@@ -480,13 +484,16 @@ for(i in 1:nrow(high.linkage.regions)){
   
   # Create plot  
   pca.RoI.plots[[i]] <- ggplot(pca.RoI.data[[i]]) +
-      geom_point(aes(PC1, PC2, col = Waterbody, shape = Ecotype)) +
-      geom_text(aes(PC1, PC2, col = Waterbody, label = paste(sample, Population)), size = 0.8) +
+      geom_point(aes(PC1, PC2, col = Ecotype, shape = Ecotype)) +
+      geom_text(aes(PC1, PC2, col = Ecotype, label = paste(sample, Population)), size = 0.8) +
       ggtitle(wndname) +
       labs(x = pca.percentage[1], y = pca.percentage[2]) +
+      scale_shape_manual(values = c(15,19,17), na.translate = F) +
+      scale_color_manual(values = c("#FFC107", "#1E88E5", "#009E73"), na.translate = F) +
       # scale_color_viridis_d(option = "turbo", na.value="grey", drop = F) 
-      scale_color_manual(values = cbPalette) +
-      theme_bw()
+      # scale_color_manual(values = cbPalette) +
+      theme_bw() +
+      theme(plot.title = element_text(size = 10))
 
   print(paste("Done:", wndname, i))
 }
@@ -499,7 +506,7 @@ pca.regions.plots <- wrap_plots(pca.RoI.plots, guides = "collect", widths = 1, h
 
 ggsave("test.png", pca.regions.plots, width = 15, height = 15)
 
-p <- ggplot(samples_data) +
+p.RoI <- ggplot(samples_data) +
     geom_tile(aes(mid, sample, fill = MDS1_ratio, group = sample)) +
     geom_vline(data = high.linkage.regions, aes(xintercept = start+1000), col = "grey", linewidth = 1) + 
     geom_vline(data = high.linkage.regions, aes(xintercept = start), linewidth = 1) + 
@@ -514,16 +521,15 @@ p <- ggplot(samples_data) +
     theme_bw() +
     scale_x_continuous(labels = function(x) paste0(x / 1e6),name = "Mbps", expand = c(0.01,0)) 
 
-ggsave("test.png", p/nj.region.plots/pca.regions.plots + plot_layout(heights = c(5,2,1)), width = 15, height = 20)
+ggsave("test.png", p.RoI/nj.region.plots/pca.regions.plots + plot_layout(heights = c(5,2,1)), width = 15, height = 20)
+ggsave(paste0(outdir,"/chrI_inv_mds_and_RoI-njtree-PCA.png"), p.RoI/nj.region.plots/pca.regions.plots + plot_layout(heights = c(5,2,1)), width = 15, height = 20)
+ggsave(paste0(outdir,"/chrI_inv_mds_and_RoI-njtree-PCA.pdf"), p.RoI/nj.region.plots/pca.regions.plots + plot_layout(heights = c(5,2,1)), width = 15, height = 20)
 
-p<- ggplot(pca.RoI.data[[i]]) +
+
+
+p<- ggplot(pca.RoI.data[[1]]) +
   geom_histogram(aes(het))
-ggsave("test.png", p + plot_layout(heights = c(5,2,1)), width = 15, height = 20)
-
-
-
-print("SLEEP")
-Sys.sleep(30)
+# ggsave("test.png", p + plot_layout(heights = c(5,2,1)), width = 15, height = 20)
 
 
 # Extract atp1a1a genotype
@@ -625,6 +631,11 @@ ggsave(paste0(outdir,"/atp1a1a_t1_genotype.png"),
 ## Calculate nj tree for all genes
 
 gene.df <- as.data.table(gene.bed[gene.bed$type=="gene",])
+## Add in regions that show variability across all ecotypes
+gene.df <- rbind(gene.df,
+            data.frame(chr = "CM102076.1", start = 26865000, end = 26895000, 
+                          type = "region", Duke.gene = "DC3", transcript.id = NA, gene = "DC3",
+                          seg.len = 26895000-26865000, mid = 26865000+(26895000-26865000)/2, gene.col = "A", track = 1, Ecotype = "gene", Population = ""))
 
 gene.calcs <- map2_dfr(
     gene.df$chr, seq_len(nrow(gene.df)),
@@ -650,6 +661,11 @@ gene.calcs <- map2_dfr(
       # Filter rows/cols with excessive NA, constant values, etc.
       is.samp.all.missing <- apply(geno.mat, MARGIN = 2, function(x) sum(is.na(x))>nrow(geno.mat)*0.5)
       if(any(is.samp.all.missing)){geno.mat <- geno.mat[,-is.samp.all.missing]}
+
+      # Remove highly missing SNPs
+      geno.mat <- geno.mat[rowSums(is.na(geno.mat)) < ncol(geno.mat)*0.3,]
+      # Remove highly missing samples
+      geno.mat <- geno.mat[,colSums(is.na(geno.mat)) < nrow(geno.mat)*0.3]
 
       ##is.bad.snp <- apply(geno.mat, 1, function(x) {
       ##      vals <- unique(na.omit(x))
@@ -678,10 +694,41 @@ gene.calcs <- map2_dfr(
       ## Get nj tree
       nj.tree <- nj(dc)
 
+      ## Also conduct PCA
+      geno.imputed <- geno.mat
+      print(dim(geno.imputed))
+
+      # Calculate average SNP value
+      SNPmeans <- colMeans(geno.imputed, na.rm = T)
+
+      # Loop through and overwrite missing data
+      for(j in 1:ncol(geno.imputed)){
+        geno.imputed[is.na(geno.imputed[,j]),j] <- SNPmeans[j]
+      }
+
+      # Run PCA
+      pca.genes <- prcomp(
+          t(geno.imputed),
+          center = TRUE,
+          scale. = FALSE)
+
+      # Extract PCA percentage labels
+      pca.percentage <- paste0("PC ", 1:(length(pca.genes$sdev)), 
+                                " (", round((pca.genes$sdev)^2 / sum((pca.genes$sdev)^2) * 100,2),"%)")
+
+      # Create into data frame with sample information
+      pca.genes.data <- data.frame(pca.genes$x)
+      pca.genes.data$sample <- rownames(pca.genes.data)
+      pca.genes.data <- merge(pca.genes.data, seq_data, by.x = "sample", by.y = "individual") %>%
+        mutate(region = wndname)
+      # Arrange in same order as geno
+      pca.genes.data <- pca.genes.data[match(colnames(geno.mat), pca.genes.data$sample),]
+      
       mds.df <- data.frame(sample = colnames(geno.mat), chr = chr, start = wnd$start, end = wnd$end, Duke.gene = wnd$Duke.gene, gene = wnd$gene, base.calls = base.calls, 
                         nsamps = ncol(geno.mat), nsnps = nrow(geno.mat),
-                        MDS1 = mds[,1], MDS2 = mds[,2], dist.marine = dc.marine.samp, het.prop = het.count/base.calls, tree = write.tree(nj.tree))
-
+                        MDS1 = mds[,1], MDS2 = mds[,2], 
+                        PC1 = pca.genes.data$PC1 , PC2 = pca.genes.data$PC2, PC1.perc = pca.percentage[1], PC2.perc = pca.percentage[2],
+                        dist.marine = dc.marine.samp, het.prop = het.count/base.calls, tree = write.tree(nj.tree))
       
 
       # Return data.frame with PCA1, PCA2, MDS1, MDS2, sample names, window name
@@ -706,7 +753,23 @@ gene.mds.plot <- ggplot(gene_data) +
   geom_jitter(aes(MDS1, start, col = Ecotype)) +
   geom_text(aes(min(MDS1*1.1), start, label = gene))
 
+gene.mds.plot <- ggplot(gene_data) +
+  geom_jitter(aes(PC1, PC2, col = Ecotype, shape = Ecotype)) +
+  scale_color_manual(values = c("#FFC107", "#1E88E5", "#009E73"), na.translate = F) +
+  scale_shape_manual(values = c(15,19,17), na.translate = F) +
+  facet_wrap(~start+gene, scale = "free")
+
 ggsave("test.png", gene.mds.plot)
+
+gene.mds.plot <- ggplot(gene_data[gene_data$gene=="atp1a1a",]) +
+  geom_jitter(aes(PC1, PC2, col = Ecotype, shape = Ecotype)) +
+  scale_color_manual(values = c("#FFC107", "#1E88E5", "#009E73"), na.translate = F) +
+  scale_shape_manual(values = c(15,19,17), na.translate = F) +
+  labs(x = first(gene_data[gene_data$gene=="atp1a1a",]$PC1.perc), y = first(gene_data[gene_data$gene=="atp1a1a",]$PC2.perc)) +
+  facet_wrap(~start+gene, scale = "free")
+
+ggsave("test.png", gene.mds.plot)
+
 
 # Loop through and plot
 nj.plots <- list()
@@ -760,23 +823,28 @@ nj.gene.plots.comb <- wrap_plots(nj.plots, guides = "collect", widths = 1, heigh
 nj.gene.plots.comb_wrapped <- wrap_elements(nj.gene.plots.comb)
 
 # 3. Combine your top plot with the wrapped lower element and save
+
+mds_chrI_inv_genes_DC3 <- mds_chrI_inv_genes + 
+  geom_segment(data = gene.df[gene.df$gene=="DC3",], aes(x = as.numeric(start), xend = end, y = 0, col = gene.col), linewidth = 1, show.legend = F) +
+  geom_text(data = gene.df[gene.df$gene=="DC3",], aes(x = as.numeric(mid), y = -track*1.5, label = gene), size = 4, show.legend = F)
+
 ggsave("test.png", 
-       (mds_chrI_inv_genes / nj.gene.plots.comb_wrapped + plot_layout(heights = c(6, 2))) + 
+       (mds_chrI_inv_genes_DC3 / nj.gene.plots.comb_wrapped + plot_layout(heights = c(6, 2))) + 
        plot_annotation(tag_levels = "a", tag_prefix = "(", tag_suffix = ")", theme = theme(plot.tag = element_text(size = 16))), 
        width = 15, height = 16)
        
 ggsave(paste0(outdir,"/chrI_inv_mds_and_gene-njtree.png"),
-       (mds_chrI_inv_genes / nj.gene.plots.comb_wrapped + plot_layout(heights = c(6, 2))) + 
+       (mds_chrI_inv_genes_DC3 / nj.gene.plots.comb_wrapped + plot_layout(heights = c(6, 2))) + 
        plot_annotation(tag_levels = "a", tag_prefix = "(", tag_suffix = ")", theme = theme(plot.tag = element_text(size = 16))), 
        width = 15, height = 16)
 
 ggsave(paste0(outdir,"/chrI_inv_mds_and_gene-njtree.tiff"),
-       (mds_chrI_inv_genes / nj.gene.plots.comb_wrapped + plot_layout(heights = c(6, 2))) + 
+       (mds_chrI_inv_genes_DC3 / nj.gene.plots.comb_wrapped + plot_layout(heights = c(6, 2))) + 
        plot_annotation(tag_levels = "a", tag_prefix = "(", tag_suffix = ")", theme = theme(plot.tag = element_text(size = 16))), 
        width = 15, height = 16)
 
 ggsave(paste0(outdir,"/chrI_inv_mds_and_gene-njtree.pdf"),
-       (mds_chrI_inv_genes / nj.gene.plots.comb_wrapped + plot_layout(heights = c(6, 2))) + 
+       (mds_chrI_inv_genes_DC3 / nj.gene.plots.comb_wrapped + plot_layout(heights = c(6, 2))) + 
        plot_annotation(tag_levels = "a", tag_prefix = "(", tag_suffix = ")", theme = theme(plot.tag = element_text(size = 16))), 
        width = 15, height = 16)
 
